@@ -4,7 +4,8 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import * as z from 'zod';
 import { writeFileSync } from 'fs';
-import { resolve } from 'path';
+import { basename, resolve } from 'path';
+import { sniffImage } from './domain/imageInfo.js';
 import { createRequire } from 'module';
 import { loadConfig } from './config.js';
 import { ModelRegistry } from './registry.js';
@@ -113,23 +114,36 @@ server.registerTool(
   async ({ model, prompt, width, height, output_path, return_image }) => {
     try {
       const result = await registry.getImage(model).generateImage({ prompt, width, height });
-      const extension = result.mimeType === 'image/jpeg' ? 'jpg' : result.mimeType.split('/')[1] ?? 'png';
-      const path = resolve(output_path ?? `polymodel-${model}-${Date.now()}.${extension}`);
-      writeFileSync(path, Buffer.from(result.base64, 'base64'));
+      const bytes = Buffer.from(result.base64, 'base64');
+      const sniffed = sniffImage(bytes);
+      const mimeType = sniffed?.mimeType ?? result.mimeType;
+      const extension = sniffed?.extension ?? 'png';
 
+      let path: string;
+      if (output_path) {
+        // Append the real extension when the caller left it off.
+        path = resolve(/\.[A-Za-z0-9]+$/.test(basename(output_path)) ? output_path : `${output_path}.${extension}`);
+      } else {
+        path = resolve(`polymodel-${model}-${Date.now()}.${extension}`);
+      }
+      writeFileSync(path, bytes);
+
+      const actualSize =
+        sniffed?.width && sniffed?.height
+          ? `${sniffed.width}x${sniffed.height}`
+          : `${result.width}x${result.height}`;
       const summary = [
         `Saved image to ${path}`,
         `model: ${result.model}`,
-        `size: ${result.width}x${result.height}`,
+        `format: ${mimeType}`,
+        `size: ${actualSize}`,
         ...(result.sizeNote ? [`note: ${result.sizeNote}`] : []),
       ].join('\n');
 
       return {
         content: [
           { type: 'text' as const, text: summary },
-          ...(return_image
-            ? [{ type: 'image' as const, data: result.base64, mimeType: result.mimeType }]
-            : []),
+          ...(return_image ? [{ type: 'image' as const, data: result.base64, mimeType }] : []),
         ],
       };
     } catch (error) {

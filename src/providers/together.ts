@@ -20,8 +20,11 @@ const MIN_EDGE = 512;
 const MAX_EDGE = 2048;
 
 function normalizeSize(width: number, height: number): { width: number; height: number } {
+  // Scale proportionally into range so the aspect ratio survives.
+  let scale = Math.max(1, MIN_EDGE / Math.min(width, height));
+  scale = Math.min(scale, MAX_EDGE / Math.max(width, height));
   const snap = (v: number) =>
-    Math.min(MAX_EDGE, Math.max(MIN_EDGE, Math.round(v / EDGE_STEP) * EDGE_STEP));
+    Math.min(MAX_EDGE, Math.max(MIN_EDGE, Math.round((v * scale) / EDGE_STEP) * EDGE_STEP));
   return { width: snap(width), height: snap(height) };
 }
 
