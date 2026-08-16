@@ -192,7 +192,8 @@ server.registerTool(
 );
 
 async function main() {
-  await server.connect(new StdioServerTransport());
+  // Default is 10 MiB; raised so large prompts never trip the transport.
+  await server.connect(new StdioServerTransport(undefined, undefined, { maxBufferSize: 64 * 1024 * 1024 }));
   console.error('Polymodel MCP Server running on stdio');
 }
 
