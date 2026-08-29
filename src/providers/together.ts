@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import type { ChatCompletionCreateParams } from 'openai/resources/chat/completions';
 import {
   ImageModel,
   ImageRequest,
@@ -40,18 +41,30 @@ export class KimiTextModel implements TextModel {
   constructor(private client: OpenAI) {}
 
   async generateText(req: TextRequest): Promise<TextResult> {
-    const response = await this.client.chat.completions.create({
+    // Streamed so bytes keep flowing: Together drops the connection on long
+    // non-streaming generations (429 worker_stream_failed after ~10 minutes).
+    const stream = await this.client.chat.completions.create({
       model: TEXT_MODEL,
       messages: [{ role: 'user', content: req.prompt }],
       max_completion_tokens: req.maxTokens ?? 16384,
+      temperature: req.temperature,
       ...(req.reasoningEffort
-        ? { reasoning_effort: req.reasoningEffort as 'low' | 'high' }
+        ? { reasoning_effort: req.reasoningEffort as ChatCompletionCreateParams['reasoning_effort'] }
         : {}),
+      stream: true,
     });
-    return {
-      text: response.choices[0]?.message?.content || 'No response received',
-      model: TEXT_MODEL,
-    };
+    let text = '';
+    let finishReason: string | null | undefined;
+    for await (const chunk of stream) {
+      const choice = chunk.choices[0];
+      text += choice?.delta?.content ?? '';
+      finishReason = choice?.finish_reason ?? finishReason;
+    }
+    if (finishReason === 'length') {
+      text +=
+        '\n\n[Output truncated: max_tokens reached. Reasoning tokens count toward the limit; raise max_tokens or lower reasoning_effort.]';
+    }
+    return { text: text || 'No response received', model: TEXT_MODEL };
   }
 }
 
