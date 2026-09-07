@@ -9,7 +9,7 @@ import {
   TextResult,
 } from '../domain/types.js';
 
-const TEXT_MODEL = 'gpt-5.6-sol';
+const TEXT_MODEL = 'gpt-6-astra';
 const IMAGE_MODEL = 'gpt-image-2';
 
 // gpt-image-2 size constraints: edges are multiples of 16, max edge 3840,

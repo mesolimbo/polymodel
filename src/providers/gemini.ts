@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { FinishReason, GoogleGenAI, ThinkingLevel } from '@google/genai';
 import {
   ImageModel,
   ImageRequest,
@@ -10,9 +10,35 @@ import {
 } from '../domain/types.js';
 
 const TEXT_MODEL = 'gemini-pro-latest';
-const IMAGE_MODEL = 'gemini-3.1-flash-image';
+const IMAGE_MODEL = 'gemini-3-pro-image';
 
-// Nano Banana 2 only takes preset aspect ratios and 1K/2K/4K sizes, so the
+// Gemini 3.x always thinks and its thinking counts against maxOutputTokens, so a
+// budget sized for the answer alone is spent before the answer starts. max_tokens
+// is treated as the answer budget and thinking headroom is added on top; an unused
+// ceiling costs nothing, since only generated tokens bill.
+const MAX_OUTPUT_TOKENS = 65_536;
+const DEFAULT_ANSWER_TOKENS = 16_384;
+// The model rejects any level outside low/medium/high and refuses to stop thinking
+// at all, so the shared effort scale is mapped onto what it accepts.
+const THINKING_LEVELS: Record<string, ThinkingLevel> = {
+  none: ThinkingLevel.LOW,
+  low: ThinkingLevel.LOW,
+  medium: ThinkingLevel.MEDIUM,
+  high: ThinkingLevel.HIGH,
+  xhigh: ThinkingLevel.HIGH,
+  max: ThinkingLevel.HIGH,
+};
+const THINKING_HEADROOM: Record<ThinkingLevel, number> = {
+  [ThinkingLevel.THINKING_LEVEL_UNSPECIFIED]: 32_768,
+  [ThinkingLevel.MINIMAL]: 4_096,
+  [ThinkingLevel.LOW]: 8_192,
+  [ThinkingLevel.MEDIUM]: 16_384,
+  [ThinkingLevel.HIGH]: 32_768,
+};
+// Left to itself the model decides how long to think, so it gets the deepest allowance.
+const DEFAULT_HEADROOM = THINKING_HEADROOM[ThinkingLevel.HIGH];
+
+// Nano Banana Pro only takes preset aspect ratios and 1K/2K/4K sizes, so the
 // requested pixel dimensions are mapped to the nearest supported combination.
 const ASPECT_RATIOS: Array<[string, number]> = [
   ['1:1', 1],
@@ -49,21 +75,32 @@ export class GeminiTextModel implements TextModel {
     provider: 'gemini',
     modality: 'text',
     underlyingModel: TEXT_MODEL,
-    description: `Google ${TEXT_MODEL}`,
+    description: `Google ${TEXT_MODEL} (currently gemini-3.1-pro-preview); always thinks, so its thinking allowance is budgeted on top of max_tokens`,
   };
 
   constructor(private client: GoogleGenAI) {}
 
   async generateText(req: TextRequest): Promise<TextResult> {
+    const thinkingLevel = req.reasoningEffort ? THINKING_LEVELS[req.reasoningEffort] : undefined;
+    const headroom = thinkingLevel ? THINKING_HEADROOM[thinkingLevel] : DEFAULT_HEADROOM;
+    const budget = Math.min(MAX_OUTPUT_TOKENS, (req.maxTokens ?? DEFAULT_ANSWER_TOKENS) + headroom);
     const response = await this.client.models.generateContent({
       model: TEXT_MODEL,
       contents: req.prompt,
       config: {
-        maxOutputTokens: req.maxTokens ?? 8192,
+        maxOutputTokens: budget,
         temperature: req.temperature,
+        ...(thinkingLevel ? { thinkingConfig: { thinkingLevel } } : {}),
       },
     });
-    return { text: response.text || 'No response received', model: TEXT_MODEL };
+    let text = response.text ?? '';
+    if (response.candidates?.[0]?.finishReason === FinishReason.MAX_TOKENS) {
+      const advice = 'Raise max_tokens or lower reasoning_effort.';
+      text = text
+        ? `${text}\n\n[Output truncated at the ${budget}-token budget; thinking counts toward it. ${advice}]`
+        : `[No answer: the ${budget}-token budget ran out while the model was still thinking. ${advice}]`;
+    }
+    return { text: text || 'No response received', model: TEXT_MODEL };
   }
 }
 
@@ -73,7 +110,7 @@ export class GeminiImageModel implements ImageModel {
     provider: 'gemini',
     modality: 'image',
     underlyingModel: IMAGE_MODEL,
-    description: `Google ${IMAGE_MODEL} (Nano Banana 2); size maps to nearest preset (1K/2K/4K + aspect ratio)`,
+    description: `Google ${IMAGE_MODEL} (Nano Banana Pro); size maps to nearest preset (1K/2K/4K + aspect ratio)`,
   };
 
   constructor(private client: GoogleGenAI) {}

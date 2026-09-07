@@ -6,12 +6,12 @@ One MCP server for external text and image models across OpenAI, Google Gemini, 
 
 | Alias | Modality | Underlying model | Provider |
 |---|---|---|---|
-| `gpt` | text | gpt-5.6-sol | OpenAI |
-| `gemini` | text | gemini-pro-latest | Google |
+| `gpt` | text | gpt-6-astra | OpenAI |
+| `gemini` | text | gemini-pro-latest (currently gemini-3.1-pro-preview) | Google |
 | `kimi-k3` | text | moonshotai/Kimi-K3 | Together AI |
 | `gpt-image` | image | gpt-image-2 | OpenAI |
-| `nano-banana` | image | gemini-3.1-flash-image | Google |
-| `flux-2-dev` | image | black-forest-labs/FLUX.2-dev | Together AI |
+| `nano-banana` | image | gemini-3-pro-image | Google |
+| `flux-2-max` | image | black-forest-labs/FLUX.2-max | Together AI |
 
 ## Setup
 
@@ -28,7 +28,7 @@ claude mcp add polymodel -- node /path/to/polymodel/dist/index.js
 
 ## Tools
 
-- `generate_text(model, prompt, max_tokens?, temperature?, reasoning_effort?)`
+- `generate_text(model, prompt, max_tokens?, temperature?, reasoning_effort?)` — `max_tokens` is the answer budget. Kimi K3 and Gemini both always reason and charge that thinking against the same limit, so those providers add a reasoning allowance on top rather than letting thinking eat the answer. Each provider also maps `reasoning_effort` onto the levels it accepts.
 - `generate_image(model, prompt, width?, height?, output_path?, return_image?)` — defaults to 750x750; each provider snaps to its nearest supported size and reports the adjustment. The image is saved to disk and the path returned.
 - `list_models()` — registered models with capabilities.
 - `get_version()`
