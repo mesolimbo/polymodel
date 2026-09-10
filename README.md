@@ -9,7 +9,7 @@ One MCP server for external text and image models across OpenAI, Google Gemini, 
 | `gpt` | text | gpt-6-astra | OpenAI |
 | `gemini` | text | gemini-pro-latest (currently gemini-3.1-pro-preview) | Google |
 | `kimi-k3` | text | moonshotai/Kimi-K3 | Together AI |
-| `gpt-image` | image | gpt-image-2 | OpenAI |
+| `gpt-image` | image | gpt-image-2.5-sunburst | OpenAI |
 | `nano-banana` | image | gemini-3-pro-image | Google |
 | `flux-2-max` | image | black-forest-labs/FLUX.2-max | Together AI |
 

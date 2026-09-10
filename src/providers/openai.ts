@@ -10,9 +10,9 @@ import {
 } from '../domain/types.js';
 
 const TEXT_MODEL = 'gpt-6-astra';
-const IMAGE_MODEL = 'gpt-image-2';
+const IMAGE_MODEL = 'gpt-image-2.5-sunburst';
 
-// gpt-image-2 size constraints: edges are multiples of 16, max edge 3840,
+// gpt-image-2.5 size constraints: edges are multiples of 16, max edge 3840,
 // total pixels between 655,360 and 8,294,400.
 const EDGE_STEP = 16;
 const MAX_EDGE = 3840;
@@ -83,7 +83,7 @@ export class OpenAIImageModel implements ImageModel {
       model: IMAGE_MODEL,
       sizeNote:
         width !== req.width || height !== req.height
-          ? `requested ${req.width}x${req.height}, adjusted to ${width}x${height} (gpt-image-2 size constraints)`
+          ? `requested ${req.width}x${req.height}, adjusted to ${width}x${height} (gpt-image-2.5 size constraints)`
           : undefined,
     };
   }
