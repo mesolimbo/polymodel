@@ -8,6 +8,7 @@ export interface Config {
   openaiApiKey?: string;
   geminiApiKey?: string;
   togetherApiKey?: string;
+  elevenlabsApiKey?: string;
 }
 
 /**
@@ -28,5 +29,6 @@ export function loadConfig(): Config {
     openaiApiKey: process.env.OPENAI_API_KEY,
     geminiApiKey: process.env.GEMINI_API_KEY,
     togetherApiKey: process.env.TOGETHER_API_KEY,
+    elevenlabsApiKey: process.env.ELEVENLABS_API_KEY,
   };
 }

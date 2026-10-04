@@ -1,11 +1,23 @@
 import {
   AnyModel,
   ImageModel,
+  Modality,
   ModelInfo,
+  MusicModel,
+  SoundModel,
   TextModel,
   isImageModel,
+  isMusicModel,
+  isSoundModel,
   isTextModel,
 } from './domain/types.js';
+
+const TOOL_FOR: Record<Modality, string> = {
+  text: 'generate_text',
+  image: 'generate_image',
+  sound: 'generate_sound_effect',
+  music: 'generate_music',
+};
 
 /**
  * Central lookup of registered models. Providers contribute models at startup;
@@ -25,23 +37,38 @@ export class ModelRegistry {
   }
 
   getText(alias: string): TextModel {
-    const model = this.get(alias);
-    if (!isTextModel(model)) {
-      throw new Error(`Model "${alias}" is an image model; use generate_image instead`);
-    }
-    return model;
+    return this.getAs(alias, 'text', isTextModel);
   }
 
   getImage(alias: string): ImageModel {
-    const model = this.get(alias);
-    if (!isImageModel(model)) {
-      throw new Error(`Model "${alias}" is a text model; use generate_text instead`);
-    }
-    return model;
+    return this.getAs(alias, 'image', isImageModel);
+  }
+
+  getSound(alias: string): SoundModel {
+    return this.getAs(alias, 'sound', isSoundModel);
+  }
+
+  getMusic(alias: string): MusicModel {
+    return this.getAs(alias, 'music', isMusicModel);
   }
 
   list(): ModelInfo[] {
     return [...this.models.values()].map((m) => m.info);
+  }
+
+  aliases(modality: Modality): string[] {
+    return this.list()
+      .filter((m) => m.modality === modality)
+      .map((m) => m.alias);
+  }
+
+  private getAs<M extends AnyModel>(alias: string, modality: Modality, guard: (m: AnyModel) => m is M): M {
+    const model = this.get(alias);
+    if (!guard(model)) {
+      const actual = model.info.modality;
+      throw new Error(`Model "${alias}" is a ${actual} model; use ${TOOL_FOR[actual]} instead`);
+    }
+    return model;
   }
 
   private get(alias: string): AnyModel {
