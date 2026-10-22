@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import type { ChatCompletionCreateParams } from 'openai/resources/chat/completions';
+import { toDataUrl } from '../domain/imageInfo.js';
 import {
   ImageModel,
   ImageRequest,
@@ -13,6 +14,9 @@ import {
 const BASE_URL = 'https://api.together.xyz/v1';
 const TEXT_MODEL = 'moonshotai/Kimi-K3';
 const IMAGE_MODEL = 'black-forest-labs/FLUX.2-max';
+// Together caps the whole request body at 100 MB rather than the image count.
+const MAX_TEXT_IMAGES = 1000;
+const MAX_REFERENCE_IMAGES = 8;
 
 // K3 always reasons, and its thinking counts against max_completion_tokens, so a
 // budget sized for the answer alone is spent before any content is emitted.
@@ -57,7 +61,8 @@ export class KimiTextModel implements TextModel {
     provider: 'together',
     modality: 'text',
     underlyingModel: TEXT_MODEL,
-    description: `Moonshot Kimi K3 served by Together AI; always reasons, so its reasoning allowance is budgeted on top of max_tokens`,
+    description: `Moonshot Kimi K3 served by Together AI; always reasons, so its reasoning allowance is budgeted on top of max_tokens; accepts images`,
+    maxInputImages: MAX_TEXT_IMAGES,
   };
 
   constructor(private client: OpenAI) {}
@@ -68,7 +73,20 @@ export class KimiTextModel implements TextModel {
     // non-streaming generations (429 worker_stream_failed after ~10 minutes).
     const stream = await this.client.chat.completions.create({
       model: TEXT_MODEL,
-      messages: [{ role: 'user', content: req.prompt }],
+      messages: [
+        {
+          role: 'user',
+          content: req.images?.length
+            ? [
+                ...req.images.map((image) => ({
+                  type: 'image_url' as const,
+                  image_url: { url: toDataUrl(image) },
+                })),
+                { type: 'text' as const, text: req.prompt },
+              ]
+            : req.prompt,
+        },
+      ],
       max_completion_tokens: budget,
       temperature: req.temperature,
       ...(req.reasoningEffort
@@ -99,7 +117,8 @@ export class FluxImageModel implements ImageModel {
     provider: 'together',
     modality: 'image',
     underlyingModel: IMAGE_MODEL,
-    description: `FLUX.2 [max] served by Together AI; edges snap to multiples of 16 between 256 and 2048`,
+    description: `FLUX.2 [max] served by Together AI; edges snap to multiples of 16 between 256 and 2048; up to ${MAX_REFERENCE_IMAGES} reference images`,
+    maxInputImages: MAX_REFERENCE_IMAGES,
   };
 
   constructor(private apiKey: string) {}
@@ -119,6 +138,7 @@ export class FluxImageModel implements ImageModel {
         height,
         n: 1,
         response_format: 'base64',
+        ...(req.referenceImages?.length ? { reference_images: req.referenceImages.map(toDataUrl) } : {}),
       }),
     });
     if (!response.ok) {

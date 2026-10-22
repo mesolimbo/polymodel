@@ -8,10 +8,18 @@ export interface ModelInfo {
   /** Provider-side model identifier, e.g. "black-forest-labs/FLUX.2-dev". */
   underlyingModel: string;
   description: string;
+  /** Images the model accepts per request; unset when it takes none. */
+  maxInputImages?: number;
+}
+
+export interface InputImage {
+  bytes: Buffer;
+  mimeType: string;
 }
 
 export interface TextRequest {
   prompt: string;
+  images?: InputImage[];
   maxTokens?: number;
   temperature?: number;
   reasoningEffort?: string;
@@ -24,6 +32,8 @@ export interface TextResult {
 
 export interface ImageRequest {
   prompt: string;
+  /** Images the model should draw on, in the order the prompt refers to them. */
+  referenceImages?: InputImage[];
   width: number;
   height: number;
 }

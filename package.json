@@ -1,7 +1,7 @@
 {
   "name": "polymodel-mcp-server",
   "version": "0.1.0",
-  "description": "Consolidated MCP server abstracting text, image, sound effect and music generation across OpenAI, Gemini, Together AI (Kimi K3, FLUX.2 max) and ElevenLabs",
+  "description": "Consolidated MCP server abstracting text, image, sound effect and music generation across OpenAI, Gemini, Together AI (Kimi K3, FLUX.2 max), Pruna (P-Image) and ElevenLabs",
   "main": "dist/index.js",
   "type": "module",
   "bin": {

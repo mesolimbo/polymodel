@@ -1,18 +1,22 @@
-import { FinishReason, GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { FinishReason, GoogleGenAI, Part, ThinkingLevel } from '@google/genai';
+import { nearestAspectRatio } from '../domain/imageInfo.js';
 import {
   ImageModel,
   ImageRequest,
   ImageResult,
+  InputImage,
   ModelInfo,
   TextModel,
   TextRequest,
   TextResult,
 } from '../domain/types.js';
 
-const TEXT_MODEL = 'gemini-pro-latest';
+const TEXT_MODEL = 'gemini-4-argon';
 const IMAGE_MODEL = 'gemini-3-pro-image';
+const MAX_TEXT_IMAGES = 3600;
+const MAX_REFERENCE_IMAGES = 14;
 
-// Gemini 3.x always thinks and its thinking counts against maxOutputTokens, so a
+// Gemini 4 Argon always thinks and its thinking counts against maxOutputTokens, so a
 // budget sized for the answer alone is spent before the answer starts. max_tokens
 // is treated as the answer budget and thinking headroom is added on top; an unused
 // ceiling costs nothing, since only generated tokens bill.
@@ -35,31 +39,18 @@ const THINKING_HEADROOM: Record<ThinkingLevel, number> = {
   [ThinkingLevel.MEDIUM]: 16_384,
   [ThinkingLevel.HIGH]: 32_768,
 };
-// Left to itself the model decides how long to think, so it gets the deepest allowance.
-const DEFAULT_HEADROOM = THINKING_HEADROOM[ThinkingLevel.HIGH];
+// Argon thinks at medium unless told otherwise.
+const DEFAULT_HEADROOM = THINKING_HEADROOM[ThinkingLevel.MEDIUM];
 
 // Nano Banana Pro only takes preset aspect ratios and 1K/2K/4K sizes, so the
 // requested pixel dimensions are mapped to the nearest supported combination.
-const ASPECT_RATIOS: Array<[string, number]> = [
-  ['1:1', 1],
-  ['2:3', 2 / 3],
-  ['3:2', 3 / 2],
-  ['3:4', 3 / 4],
-  ['4:3', 4 / 3],
-  ['9:16', 9 / 16],
-  ['16:9', 16 / 9],
-  ['21:9', 21 / 9],
-];
+const ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9'];
 
-function nearestAspectRatio(width: number, height: number): string {
-  const target = width / height;
-  let best = ASPECT_RATIOS[0];
-  for (const candidate of ASPECT_RATIOS) {
-    if (Math.abs(Math.log(candidate[1] / target)) < Math.abs(Math.log(best[1] / target))) {
-      best = candidate;
-    }
-  }
-  return best[0];
+function promptParts(prompt: string, images: InputImage[] = []): Part[] {
+  return [
+    ...images.map((image) => ({ inlineData: { data: image.bytes.toString('base64'), mimeType: image.mimeType } })),
+    { text: prompt },
+  ];
 }
 
 function nearestImageSize(width: number, height: number): '1K' | '2K' | '4K' {
@@ -75,7 +66,8 @@ export class GeminiTextModel implements TextModel {
     provider: 'gemini',
     modality: 'text',
     underlyingModel: TEXT_MODEL,
-    description: `Google ${TEXT_MODEL} (currently gemini-3.1-pro-preview); always thinks, so its thinking allowance is budgeted on top of max_tokens`,
+    description: `Google ${TEXT_MODEL}; always thinks, so its thinking allowance is budgeted on top of max_tokens; accepts images`,
+    maxInputImages: MAX_TEXT_IMAGES,
   };
 
   constructor(private client: GoogleGenAI) {}
@@ -86,7 +78,7 @@ export class GeminiTextModel implements TextModel {
     const budget = Math.min(MAX_OUTPUT_TOKENS, (req.maxTokens ?? DEFAULT_ANSWER_TOKENS) + headroom);
     const response = await this.client.models.generateContent({
       model: TEXT_MODEL,
-      contents: req.prompt,
+      contents: promptParts(req.prompt, req.images),
       config: {
         maxOutputTokens: budget,
         temperature: req.temperature,
@@ -110,17 +102,18 @@ export class GeminiImageModel implements ImageModel {
     provider: 'gemini',
     modality: 'image',
     underlyingModel: IMAGE_MODEL,
-    description: `Google ${IMAGE_MODEL} (Nano Banana Pro); size maps to nearest preset (1K/2K/4K + aspect ratio)`,
+    description: `Google ${IMAGE_MODEL} (Nano Banana Pro); size maps to nearest preset (1K/2K/4K + aspect ratio); up to ${MAX_REFERENCE_IMAGES} reference images`,
+    maxInputImages: MAX_REFERENCE_IMAGES,
   };
 
   constructor(private client: GoogleGenAI) {}
 
   async generateImage(req: ImageRequest): Promise<ImageResult> {
-    const aspectRatio = nearestAspectRatio(req.width, req.height);
+    const aspectRatio = nearestAspectRatio(req.width, req.height, ASPECT_RATIOS);
     const imageSize = nearestImageSize(req.width, req.height);
     const response = await this.client.models.generateContent({
       model: IMAGE_MODEL,
-      contents: req.prompt,
+      contents: promptParts(req.prompt, req.referenceImages),
       config: {
         responseModalities: ['IMAGE'],
         imageConfig: { aspectRatio, imageSize },

@@ -1,4 +1,5 @@
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
+import { toDataUrl } from '../domain/imageInfo.js';
 import {
   ImageModel,
   ImageRequest,
@@ -11,6 +12,8 @@ import {
 
 const TEXT_MODEL = 'gpt-6-astra';
 const IMAGE_MODEL = 'gpt-image-2.5-sunburst';
+const MAX_TEXT_IMAGES = 1500;
+const MAX_REFERENCE_IMAGES = 16;
 
 // gpt-image-2.5 size constraints: edges are multiples of 16, max edge 3840,
 // total pixels between 655,360 and 8,294,400.
@@ -38,7 +41,8 @@ export class OpenAITextModel implements TextModel {
     provider: 'openai',
     modality: 'text',
     underlyingModel: TEXT_MODEL,
-    description: `OpenAI ${TEXT_MODEL} via the Responses API`,
+    description: `OpenAI ${TEXT_MODEL} via the Responses API; accepts images`,
+    maxInputImages: MAX_TEXT_IMAGES,
   };
 
   constructor(private client: OpenAI) {}
@@ -46,7 +50,21 @@ export class OpenAITextModel implements TextModel {
   async generateText(req: TextRequest): Promise<TextResult> {
     const response = await this.client.responses.create({
       model: TEXT_MODEL,
-      input: req.prompt,
+      input: req.images?.length
+        ? [
+            {
+              role: 'user',
+              content: [
+                ...req.images.map((image) => ({
+                  type: 'input_image' as const,
+                  image_url: toDataUrl(image),
+                  detail: 'auto' as const,
+                })),
+                { type: 'input_text' as const, text: req.prompt },
+              ],
+            },
+          ]
+        : req.prompt,
       reasoning: { effort: (req.reasoningEffort ?? 'low') as 'low' },
       max_output_tokens: req.maxTokens ?? 16384,
     });
@@ -60,19 +78,33 @@ export class OpenAIImageModel implements ImageModel {
     provider: 'openai',
     modality: 'image',
     underlyingModel: IMAGE_MODEL,
-    description: `OpenAI ${IMAGE_MODEL}; edges snap to multiples of 16, minimum ~810x810 total pixels`,
+    description: `OpenAI ${IMAGE_MODEL}; edges snap to multiples of 16, minimum ~810x810 total pixels; up to ${MAX_REFERENCE_IMAGES} reference images`,
+    maxInputImages: MAX_REFERENCE_IMAGES,
   };
 
   constructor(private client: OpenAI) {}
 
   async generateImage(req: ImageRequest): Promise<ImageResult> {
     const { width, height } = normalizeSize(req.width, req.height);
-    const result = await this.client.images.generate({
-      model: IMAGE_MODEL,
-      prompt: req.prompt,
-      size: `${width}x${height}`,
-      output_format: 'png',
-    });
+    const size = `${width}x${height}`;
+    const result = req.referenceImages?.length
+      ? await this.client.images.edit({
+          model: IMAGE_MODEL,
+          image: await Promise.all(
+            req.referenceImages.map((image, i) =>
+              toFile(image.bytes, `reference-${i + 1}.${image.mimeType.split('/')[1]}`, { type: image.mimeType })
+            )
+          ),
+          prompt: req.prompt,
+          size,
+          output_format: 'png',
+        })
+      : await this.client.images.generate({
+          model: IMAGE_MODEL,
+          prompt: req.prompt,
+          size,
+          output_format: 'png',
+        });
     const base64 = result.data?.[0]?.b64_json;
     if (!base64) throw new Error('OpenAI returned no image data');
     return {

@@ -47,3 +47,16 @@ export function sniffImage(buf: Buffer): SniffedImage | undefined {
 
   return undefined;
 }
+
+export function toDataUrl(image: { bytes: Buffer; mimeType: string }): string {
+  return `data:${image.mimeType};base64,${image.bytes.toString('base64')}`;
+}
+
+/** Pick the "w:h" preset closest to the requested shape, compared on a log scale so 2:1 and 1:2 miss 1:1 equally. */
+export function nearestAspectRatio(width: number, height: number, presets: string[]): string {
+  const distance = (preset: string) => {
+    const [w, h] = preset.split(':').map(Number);
+    return Math.abs(Math.log(w / h / (width / height)));
+  };
+  return presets.reduce((best, preset) => (distance(preset) < distance(best) ? preset : best));
+}

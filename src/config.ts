@@ -9,6 +9,7 @@ export interface Config {
   geminiApiKey?: string;
   togetherApiKey?: string;
   elevenlabsApiKey?: string;
+  prunaApiKey?: string;
 }
 
 /**
@@ -30,5 +31,6 @@ export function loadConfig(): Config {
     geminiApiKey: process.env.GEMINI_API_KEY,
     togetherApiKey: process.env.TOGETHER_API_KEY,
     elevenlabsApiKey: process.env.ELEVENLABS_API_KEY,
+    prunaApiKey: process.env.PRUNA_API_KEY,
   };
 }

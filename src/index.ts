@@ -3,11 +3,11 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import * as z from 'zod';
-import { mkdirSync, writeFileSync } from 'fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { basename, join, resolve } from 'path';
 import { sniffImage } from './domain/imageInfo.js';
 import { readZip } from './domain/zip.js';
-import { AudioFile } from './domain/types.js';
+import { AudioFile, InputImage, ModelInfo } from './domain/types.js';
 import { createRequire } from 'module';
 import { loadConfig } from './config.js';
 import { ModelRegistry } from './registry.js';
@@ -15,6 +15,7 @@ import { createOpenAIModels } from './providers/openai.js';
 import { createGeminiModels } from './providers/gemini.js';
 import { createTogetherModels } from './providers/together.js';
 import { ElevenLabsClient, createElevenLabsModels } from './providers/elevenlabs.js';
+import { createPrunaModels } from './providers/pruna.js';
 
 const pkg = createRequire(import.meta.url)('../package.json') as {
   name: string;
@@ -31,6 +32,7 @@ if (config.openaiApiKey) registry.register(...createOpenAIModels(config.openaiAp
 if (config.geminiApiKey) registry.register(...createGeminiModels(config.geminiApiKey));
 if (config.togetherApiKey) registry.register(...createTogetherModels(config.togetherApiKey));
 if (elevenlabs) registry.register(...createElevenLabsModels(elevenlabs));
+if (config.prunaApiKey) registry.register(...createPrunaModels(config.prunaApiKey));
 
 if (registry.list().length === 0) {
   console.error('No API keys found. Copy .env.example to .env and add at least one key.');
@@ -61,6 +63,24 @@ function outputPath(requested: string | undefined, model: string, extension: str
   if (!requested) return resolve(`polymodel-${model}-${Date.now()}.${extension}`);
   return resolve(/\.[A-Za-z0-9]+$/.test(basename(requested)) ? requested : `${requested}.${extension}`);
 }
+
+/** Read images from disk for a model, rejecting formats every provider can't take and counts over its cap. */
+function loadImages(paths: string[] | undefined, info: ModelInfo): InputImage[] | undefined {
+  if (!paths?.length) return undefined;
+  if (!info.maxInputImages) throw new Error(`${info.alias} does not accept images`);
+  if (paths.length > info.maxInputImages) {
+    throw new Error(`${info.alias} accepts at most ${info.maxInputImages} images; got ${paths.length}`);
+  }
+  return paths.map((requested) => {
+    const path = resolve(requested);
+    const bytes = readFileSync(path);
+    const sniffed = sniffImage(bytes);
+    if (!sniffed) throw new Error(`${path} is not a PNG, JPEG or WebP image`);
+    return { bytes, mimeType: sniffed.mimeType };
+  });
+}
+
+const imagePathsSchema = z.array(z.string()).optional();
 
 function extractZip(bytes: Buffer, dir: string): string[] {
   mkdirSync(dir, { recursive: true });
@@ -93,10 +113,13 @@ if (textAliases) {
     'generate_text',
     {
       title: 'Generate text',
-      description: `Query an external text model with a prompt. Available models: ${textAliases}`,
+      description: `Query an external text model with a prompt and optional images. Available models: ${textAliases}`,
       inputSchema: z.object({
         model: z.string().describe(`Model alias to use (${textAliases})`),
         prompt: z.string().describe('The prompt to send to the model'),
+        images: imagePathsSchema.describe(
+          "Paths to PNG, JPEG or WebP images to send with the prompt, in order; list_models gives each model's limit"
+        ),
         max_tokens: z.number().optional().describe('Maximum tokens in the response'),
         temperature: z.number().min(0).max(2).optional().describe('Sampling temperature'),
         reasoning_effort: z
@@ -105,10 +128,12 @@ if (textAliases) {
           .describe('Reasoning effort, for models that support it'),
       }),
     },
-    async ({ model, prompt, max_tokens, temperature, reasoning_effort }) => {
+    async ({ model, prompt, images, max_tokens, temperature, reasoning_effort }) => {
       try {
-        const result = await registry.getText(model).generateText({
+        const textModel = registry.getText(model);
+        const result = await textModel.generateText({
           prompt,
+          images: loadImages(images, textModel.info),
           maxTokens: max_tokens,
           temperature,
           reasoningEffort: reasoning_effort,
@@ -132,7 +157,12 @@ if (imageAliases) {
         'The image is saved to disk and the file path returned.',
       inputSchema: z.object({
         model: z.string().describe(`Model alias to use (${imageAliases})`),
-        prompt: z.string().describe('Description of the image to generate'),
+        prompt: z
+          .string()
+          .describe('Description of the image to generate; refer to reference images by their order ("the first image")'),
+        reference_images: imagePathsSchema.describe(
+          "Paths to PNG, JPEG or WebP images to edit, combine or take style and subjects from; list_models gives each model's limit"
+        ),
         width: z.number().int().positive().default(DEFAULT_IMAGE_EDGE).describe('Requested width in pixels'),
         height: z.number().int().positive().default(DEFAULT_IMAGE_EDGE).describe('Requested height in pixels'),
         output_path: z
@@ -145,9 +175,15 @@ if (imageAliases) {
           .describe('Also return the image content inline (costs context; the file is written regardless)'),
       }),
     },
-    async ({ model, prompt, width, height, output_path, return_image }) => {
+    async ({ model, prompt, reference_images, width, height, output_path, return_image }) => {
       try {
-        const result = await registry.getImage(model).generateImage({ prompt, width, height });
+        const imageModel = registry.getImage(model);
+        const result = await imageModel.generateImage({
+          prompt,
+          referenceImages: loadImages(reference_images, imageModel.info),
+          width,
+          height,
+        });
         const bytes = Buffer.from(result.base64, 'base64');
         const sniffed = sniffImage(bytes);
         const mimeType = sniffed?.mimeType ?? result.mimeType;
@@ -660,7 +696,8 @@ server.registerTool(
   'list_models',
   {
     title: 'List models',
-    description: 'List all available models with their provider, modality, and underlying model id',
+    description:
+      'List all available models with their provider, modality, underlying model id, and how many input images each accepts',
     inputSchema: z.object({}),
     outputSchema: z.object({
       models: z.array(
@@ -670,6 +707,7 @@ server.registerTool(
           modality: z.enum(['text', 'image', 'sound', 'music']),
           underlyingModel: z.string(),
           description: z.string(),
+          maxInputImages: z.number().optional(),
         })
       ),
     }),
