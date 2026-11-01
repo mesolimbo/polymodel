@@ -16,7 +16,7 @@ import {
 } from '../domain/types.js';
 
 const BASE_URL = 'https://api.elevenlabs.io/v1';
-const SOUND_MODEL = 'eleven_text_to_sound_v2';
+const SOUND_MODEL = 'eleven_text_to_sound_v3';
 
 // Long songs, stem separation and video scoring can run past undici's default
 // five-minute header and body timeouts, so ElevenLabs calls wait indefinitely.

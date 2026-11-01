@@ -13,7 +13,7 @@ One MCP server for external text, image, sound effect and music models across Op
 | `nano-banana` | image | gemini-3-pro-image | Google |
 | `flux-3` | image | blackforestlabs/flux-3/text-to-image (edit-image with reference images) | fal |
 | `p-image` | image | p-image (p-image-edit with reference images) | Pruna |
-| `eleven-sfx` | sound | eleven_text_to_sound_v2 | ElevenLabs |
+| `eleven-sfx` | sound | eleven_text_to_sound_v3 | ElevenLabs |
 | `eleven-music` | music | music_v2_5 | ElevenLabs |
 | `eleven-music-v2` | music | music_v2 | ElevenLabs |
 | `eleven-music-v1` | music | music_v1 (deprecated by ElevenLabs) | ElevenLabs |
