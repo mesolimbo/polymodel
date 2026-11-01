@@ -1,22 +1,12 @@
 import OpenAI from 'openai';
 import type { ChatCompletionCreateParams } from 'openai/resources/chat/completions';
 import { toDataUrl } from '../domain/imageInfo.js';
-import {
-  ImageModel,
-  ImageRequest,
-  ImageResult,
-  ModelInfo,
-  TextModel,
-  TextRequest,
-  TextResult,
-} from '../domain/types.js';
+import { ModelInfo, TextModel, TextRequest, TextResult } from '../domain/types.js';
 
 const BASE_URL = 'https://api.together.xyz/v1';
 const TEXT_MODEL = 'moonshotai/Kimi-K3';
-const IMAGE_MODEL = 'black-forest-labs/FLUX.2-max';
 // Together caps the whole request body at 100 MB rather than the image count.
 const MAX_TEXT_IMAGES = 1000;
-const MAX_REFERENCE_IMAGES = 8;
 
 // K3 always reasons, and its thinking counts against max_completion_tokens, so a
 // budget sized for the answer alone is spent before any content is emitted.
@@ -38,21 +28,6 @@ const DEFAULT_HEADROOM = REASONING_HEADROOM.max;
 function completionBudget(req: TextRequest): number {
   const headroom = (req.reasoningEffort ? REASONING_HEADROOM[req.reasoningEffort] : undefined) ?? DEFAULT_HEADROOM;
   return Math.min(MAX_COMPLETION_TOKENS, (req.maxTokens ?? DEFAULT_ANSWER_TOKENS) + headroom);
-}
-
-// FLUX.2 max accepts direct pixel dimensions; snap to multiples of 16 within
-// the 256-2048 range Together serves.
-const EDGE_STEP = 16;
-const MIN_EDGE = 256;
-const MAX_EDGE = 2048;
-
-function normalizeSize(width: number, height: number): { width: number; height: number } {
-  // Scale proportionally into range so the aspect ratio survives.
-  let scale = Math.max(1, MIN_EDGE / Math.min(width, height));
-  scale = Math.min(scale, MAX_EDGE / Math.max(width, height));
-  const snap = (v: number) =>
-    Math.min(MAX_EDGE, Math.max(MIN_EDGE, Math.round((v * scale) / EDGE_STEP) * EDGE_STEP));
-  return { width: snap(width), height: snap(height) };
 }
 
 export class KimiTextModel implements TextModel {
@@ -111,67 +86,7 @@ export class KimiTextModel implements TextModel {
   }
 }
 
-export class FluxImageModel implements ImageModel {
-  readonly info: ModelInfo = {
-    alias: 'flux-2-max',
-    provider: 'together',
-    modality: 'image',
-    underlyingModel: IMAGE_MODEL,
-    description: `FLUX.2 [max] served by Together AI; edges snap to multiples of 16 between 256 and 2048; up to ${MAX_REFERENCE_IMAGES} reference images`,
-    maxInputImages: MAX_REFERENCE_IMAGES,
-  };
-
-  constructor(private apiKey: string) {}
-
-  async generateImage(req: ImageRequest): Promise<ImageResult> {
-    const { width, height } = normalizeSize(req.width, req.height);
-    const response = await fetch(`${BASE_URL}/images/generations`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: IMAGE_MODEL,
-        prompt: req.prompt,
-        width,
-        height,
-        n: 1,
-        response_format: 'base64',
-        ...(req.referenceImages?.length ? { reference_images: req.referenceImages.map(toDataUrl) } : {}),
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`Together API error ${response.status}: ${await response.text()}`);
-    }
-
-    const payload = (await response.json()) as {
-      data?: Array<{ b64_json?: string; url?: string }>;
-    };
-    const item = payload.data?.[0];
-    let base64 = item?.b64_json;
-    if (!base64 && item?.url) {
-      const download = await fetch(item.url);
-      if (!download.ok) throw new Error(`Failed to download image: ${download.status}`);
-      base64 = Buffer.from(await download.arrayBuffer()).toString('base64');
-    }
-    if (!base64) throw new Error('Together returned no image data');
-
-    return {
-      base64,
-      mimeType: 'image/png',
-      width,
-      height,
-      model: IMAGE_MODEL,
-      sizeNote:
-        width !== req.width || height !== req.height
-          ? `requested ${req.width}x${req.height}, adjusted to ${width}x${height} (FLUX.2 max size constraints)`
-          : undefined,
-    };
-  }
-}
-
-export function createTogetherModels(apiKey: string): [TextModel, ImageModel] {
+export function createTogetherModels(apiKey: string): [TextModel] {
   const client = new OpenAI({ apiKey, baseURL: BASE_URL });
-  return [new KimiTextModel(client), new FluxImageModel(apiKey)];
+  return [new KimiTextModel(client)];
 }

@@ -104,6 +104,7 @@ export class OpenAIImageModel implements ImageModel {
           prompt: req.prompt,
           size,
           output_format: 'png',
+          moderation: 'low',
         });
     const base64 = result.data?.[0]?.b64_json;
     if (!base64) throw new Error('OpenAI returned no image data');

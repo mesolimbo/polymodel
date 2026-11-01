@@ -16,6 +16,7 @@ import { createGeminiModels } from './providers/gemini.js';
 import { createTogetherModels } from './providers/together.js';
 import { ElevenLabsClient, createElevenLabsModels } from './providers/elevenlabs.js';
 import { createPrunaModels } from './providers/pruna.js';
+import { createFalModels } from './providers/fal.js';
 
 const pkg = createRequire(import.meta.url)('../package.json') as {
   name: string;
@@ -33,6 +34,7 @@ if (config.geminiApiKey) registry.register(...createGeminiModels(config.geminiAp
 if (config.togetherApiKey) registry.register(...createTogetherModels(config.togetherApiKey));
 if (elevenlabs) registry.register(...createElevenLabsModels(elevenlabs));
 if (config.prunaApiKey) registry.register(...createPrunaModels(config.prunaApiKey));
+if (config.falApiKey) registry.register(...createFalModels(config.falApiKey));
 
 if (registry.list().length === 0) {
   console.error('No API keys found. Copy .env.example to .env and add at least one key.');

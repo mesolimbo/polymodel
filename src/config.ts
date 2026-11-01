@@ -10,6 +10,7 @@ export interface Config {
   togetherApiKey?: string;
   elevenlabsApiKey?: string;
   prunaApiKey?: string;
+  falApiKey?: string;
 }
 
 /**
@@ -32,5 +33,6 @@ export function loadConfig(): Config {
     togetherApiKey: process.env.TOGETHER_API_KEY,
     elevenlabsApiKey: process.env.ELEVENLABS_API_KEY,
     prunaApiKey: process.env.PRUNA_API_KEY,
+    falApiKey: process.env.FAL_API_KEY,
   };
 }

@@ -1,4 +1,4 @@
-import { FinishReason, GoogleGenAI, Part, ThinkingLevel } from '@google/genai';
+import { FinishReason, GoogleGenAI, HarmBlockThreshold, HarmCategory, Part, SafetySetting, ThinkingLevel } from '@google/genai';
 import { nearestAspectRatio } from '../domain/imageInfo.js';
 import {
   ImageModel,
@@ -46,6 +46,15 @@ const DEFAULT_HEADROOM = THINKING_HEADROOM[ThinkingLevel.MEDIUM];
 // requested pixel dimensions are mapped to the nearest supported combination.
 const ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9'];
 
+// Every adjustable filter turned off; Google still blocks core harms such as child safety.
+const SAFETY_SETTINGS: SafetySetting[] = [
+  HarmCategory.HARM_CATEGORY_HARASSMENT,
+  HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+  HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+  HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+  HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+].map((category) => ({ category, threshold: HarmBlockThreshold.OFF }));
+
 function promptParts(prompt: string, images: InputImage[] = []): Part[] {
   return [
     ...images.map((image) => ({ inlineData: { data: image.bytes.toString('base64'), mimeType: image.mimeType } })),
@@ -81,6 +90,7 @@ export class GeminiTextModel implements TextModel {
       contents: promptParts(req.prompt, req.images),
       config: {
         maxOutputTokens: budget,
+        safetySettings: SAFETY_SETTINGS,
         temperature: req.temperature,
         ...(thinkingLevel ? { thinkingConfig: { thinkingLevel } } : {}),
       },
@@ -117,6 +127,7 @@ export class GeminiImageModel implements ImageModel {
       config: {
         responseModalities: ['IMAGE'],
         imageConfig: { aspectRatio, imageSize },
+        safetySettings: SAFETY_SETTINGS,
       },
     });
 

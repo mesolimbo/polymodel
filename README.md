@@ -1,6 +1,6 @@
 # Polymodel MCP Server
 
-One MCP server for external text, image, sound effect and music models across OpenAI, Google Gemini, Together AI, Pruna and ElevenLabs. Built on the MCP TypeScript SDK v2 (2026-07-28 spec); it supersedes the separate `openai-mcp` and `gemini-mcp` servers.
+One MCP server for external text, image, sound effect and music models across OpenAI, Google Gemini, Together AI, Pruna, fal and ElevenLabs. Built on the MCP TypeScript SDK v2 (2026-07-28 spec); it supersedes the separate `openai-mcp` and `gemini-mcp` servers.
 
 ## Models
 
@@ -11,7 +11,7 @@ One MCP server for external text, image, sound effect and music models across Op
 | `kimi-k3` | text | moonshotai/Kimi-K3 | Together AI |
 | `gpt-image` | image | gpt-image-2.5-sunburst | OpenAI |
 | `nano-banana` | image | gemini-3-pro-image | Google |
-| `flux-2-max` | image | black-forest-labs/FLUX.2-max | Together AI |
+| `flux-3` | image | blackforestlabs/flux-3/text-to-image (edit-image with reference images) | fal |
 | `p-image` | image | p-image (p-image-edit with reference images) | Pruna |
 | `eleven-sfx` | sound | eleven_text_to_sound_v2 | ElevenLabs |
 | `eleven-music` | music | music_v2_5 | ElevenLabs |
@@ -34,7 +34,7 @@ claude mcp add polymodel -- node /path/to/polymodel/dist/index.js
 ## Tools
 
 - `generate_text(model, prompt, images?, max_tokens?, temperature?, reasoning_effort?)` — `images` takes paths to PNG, JPEG or WebP files; every text model accepts them. `max_tokens` is the answer budget. Kimi K3 and Gemini both always reason and charge that thinking against the same limit, so those providers add a reasoning allowance on top rather than letting thinking eat the answer. Each provider also maps `reasoning_effort` onto the levels it accepts.
-- `generate_image(model, prompt, reference_images?, width?, height?, output_path?, return_image?)` — `reference_images` takes paths to images to edit, combine or borrow style from (up to 16 for `gpt-image`, 14 for `nano-banana`, 8 for `flux-2-max`, 5 for `p-image`); refer to them by order in the prompt. Defaults to 750x750; each provider snaps to its nearest supported size and reports the adjustment. The image is saved to disk and the path returned.
+- `generate_image(model, prompt, reference_images?, width?, height?, output_path?, return_image?)` — `reference_images` takes paths to images to edit, combine or borrow style from (up to 16 for `gpt-image`, 14 for `nano-banana`, 10 for `flux-3`, 5 for `p-image`); refer to them by order in the prompt. Defaults to 750x750; each provider snaps to its nearest supported size and reports the adjustment. The image is saved to disk and the path returned.
 - `generate_sound_effect(prompt, model?, duration_seconds?, loop?, prompt_influence?, output_format?, output_path?, return_audio?)`
 - `generate_music(prompt | composition_plan, model?, ...)` — covers every Music API option, including generation mode, finetunes, inpainting storage, lyric timestamps and C2PA signing. Saves the audio plus a `.json` file holding the composition plan the model used, so the song can be edited later.
 - `create_music_plan(prompt, model?, music_length_ms?, source_composition_plan?)` — draft or revise a plan without generating audio.

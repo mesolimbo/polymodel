@@ -47,7 +47,7 @@ export class PrunaImageModel implements ImageModel {
     if (req.referenceImages?.length) return this.edit(req, req.referenceImages);
 
     const { width, height } = normalizeSize(req.width, req.height);
-    const base64 = await this.predict(IMAGE_MODEL, { prompt: req.prompt, aspect_ratio: 'custom', width, height });
+    const base64 = await this.predict(IMAGE_MODEL, { prompt: req.prompt, aspect_ratio: 'custom', width, height, disable_safety_checker: true });
     return {
       base64,
       mimeType: 'image/jpeg',
@@ -65,7 +65,7 @@ export class PrunaImageModel implements ImageModel {
     const aspectRatio = nearestAspectRatio(req.width, req.height, EDIT_ASPECT_RATIOS);
     // Inline base64 is rejected despite the docs; uploaded file URLs work.
     const images = await Promise.all(references.map((image, i) => this.upload(image, i)));
-    const base64 = await this.predict(EDIT_MODEL, { prompt: req.prompt, images, aspect_ratio: aspectRatio });
+    const base64 = await this.predict(EDIT_MODEL, { prompt: req.prompt, images, aspect_ratio: aspectRatio, disable_safety_checker: true });
     return {
       base64,
       mimeType: 'image/jpeg',
