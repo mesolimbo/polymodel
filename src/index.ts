@@ -77,7 +77,7 @@ function loadImages(paths: string[] | undefined, info: ModelInfo): InputImage[] 
     const path = resolve(requested);
     const bytes = readFileSync(path);
     const sniffed = sniffImage(bytes);
-    if (!sniffed) throw new Error(`${path} is not a PNG, JPEG or WebP image`);
+    if (!sniffed || sniffed.extension === 'gif') throw new Error(`${path} is not a PNG, JPEG or WebP image`);
     return { bytes, mimeType: sniffed.mimeType };
   });
 }
@@ -156,6 +156,7 @@ if (imageAliases) {
       description:
         `Generate an image with an external model. Available models: ${imageAliases}. ` +
         `Defaults to a ${DEFAULT_IMAGE_EDGE}x${DEFAULT_IMAGE_EDGE} square; providers snap the size to their nearest supported dimensions. ` +
+        'Set gif for an animated GIF on models that support it (see list_models). ' +
         'The image is saved to disk and the file path returned.',
       inputSchema: z.object({
         model: z.string().describe(`Model alias to use (${imageAliases})`),
@@ -165,27 +166,59 @@ if (imageAliases) {
         reference_images: imagePathsSchema.describe(
           "Paths to PNG, JPEG or WebP images to edit, combine or take style and subjects from; list_models gives each model's limit"
         ),
-        width: z.number().int().positive().default(DEFAULT_IMAGE_EDGE).describe('Requested width in pixels'),
-        height: z.number().int().positive().default(DEFAULT_IMAGE_EDGE).describe('Requested height in pixels'),
+        width: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(`Requested width in pixels; defaults to ${DEFAULT_IMAGE_EDGE}, or the model's choice for a GIF`),
+        height: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(`Requested height in pixels; defaults to ${DEFAULT_IMAGE_EDGE}, or the model's choice for a GIF`),
+        gif: z
+          .boolean()
+          .default(false)
+          .describe('Generate an animated GIF; leave width and height unset unless you need a size, as large frames can exceed the provider limit'),
+        frame_count: z.number().int().min(2).max(16).optional().describe('GIF frames; the provider defaults to 9'),
+        frame_duration_ms: z
+          .number()
+          .int()
+          .min(20)
+          .max(2000)
+          .optional()
+          .describe('Delay per GIF frame in milliseconds; the provider defaults to 200'),
         output_path: z
           .string()
           .optional()
-          .describe('Where to save the image; defaults to polymodel-<model>-<n>.png in the current directory'),
+          .describe('Where to save the image; defaults to polymodel-<model>-<n>.<format> in the current directory'),
         return_image: z
           .boolean()
           .default(false)
           .describe('Also return the image content inline (costs context; the file is written regardless)'),
       }),
     },
-    async ({ model, prompt, reference_images, width, height, output_path, return_image }) => {
+    async ({ model, prompt, reference_images, width, height, gif, frame_count, frame_duration_ms, output_path, return_image }) => {
       try {
         const imageModel = registry.getImage(model);
-        const result = await imageModel.generateImage({
-          prompt,
-          referenceImages: loadImages(reference_images, imageModel.info),
-          width,
-          height,
-        });
+        if (gif && !imageModel.generateGif) throw new Error(`${imageModel.info.alias} does not support GIF output`);
+        if (!gif && (frame_count !== undefined || frame_duration_ms !== undefined)) {
+          throw new Error('frame_count and frame_duration_ms require gif: true');
+        }
+        const referenceImages = loadImages(reference_images, imageModel.info);
+        const hasSize = width !== undefined || height !== undefined;
+        const sized = { width: width ?? DEFAULT_IMAGE_EDGE, height: height ?? DEFAULT_IMAGE_EDGE };
+        const result = gif
+          ? await imageModel.generateGif!({
+              prompt,
+              referenceImages,
+              ...(hasSize ? sized : {}),
+              frameCount: frame_count,
+              frameDurationMs: frame_duration_ms,
+            })
+          : await imageModel.generateImage({ prompt, referenceImages, ...sized });
         const bytes = Buffer.from(result.base64, 'base64');
         const sniffed = sniffImage(bytes);
         const mimeType = sniffed?.mimeType ?? result.mimeType;

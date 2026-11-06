@@ -1,9 +1,11 @@
 import OpenAI, { toFile } from 'openai';
-import { toDataUrl } from '../domain/imageInfo.js';
+import { sniffImage, toDataUrl } from '../domain/imageInfo.js';
 import {
+  GifRequest,
   ImageModel,
   ImageRequest,
   ImageResult,
+  InputImage,
   ModelInfo,
   TextModel,
   TextRequest,
@@ -33,6 +35,14 @@ function normalizeSize(width: number, height: number): { width: number; height: 
   const snap = (v: number) =>
     Math.min(MAX_EDGE, Math.max(EDGE_STEP, Math.ceil((v * scale) / EDGE_STEP) * EDGE_STEP));
   return { width: snap(width), height: snap(height) };
+}
+
+function toReferenceFiles(images: InputImage[]) {
+  return Promise.all(
+    images.map((image, i) =>
+      toFile(image.bytes, `reference-${i + 1}.${image.mimeType.split('/')[1]}`, { type: image.mimeType })
+    )
+  );
 }
 
 export class OpenAITextModel implements TextModel {
@@ -78,7 +88,7 @@ export class OpenAIImageModel implements ImageModel {
     provider: 'openai',
     modality: 'image',
     underlyingModel: IMAGE_MODEL,
-    description: `OpenAI ${IMAGE_MODEL}; edges snap to multiples of 16, minimum ~810x810 total pixels; up to ${MAX_REFERENCE_IMAGES} reference images`,
+    description: `OpenAI ${IMAGE_MODEL}; edges snap to multiples of 16, minimum ~810x810 total pixels; up to ${MAX_REFERENCE_IMAGES} reference images; supports animated GIFs`,
     maxInputImages: MAX_REFERENCE_IMAGES,
   };
 
@@ -90,11 +100,7 @@ export class OpenAIImageModel implements ImageModel {
     const result = req.referenceImages?.length
       ? await this.client.images.edit({
           model: IMAGE_MODEL,
-          image: await Promise.all(
-            req.referenceImages.map((image, i) =>
-              toFile(image.bytes, `reference-${i + 1}.${image.mimeType.split('/')[1]}`, { type: image.mimeType })
-            )
-          ),
+          image: await toReferenceFiles(req.referenceImages),
           prompt: req.prompt,
           size,
           output_format: 'png',
@@ -117,6 +123,43 @@ export class OpenAIImageModel implements ImageModel {
       sizeNote:
         width !== req.width || height !== req.height
           ? `requested ${req.width}x${req.height}, adjusted to ${width}x${height} (gpt-image-2.6 size constraints)`
+          : undefined,
+    };
+  }
+
+  async generateGif(req: GifRequest): Promise<ImageResult> {
+    const snap = (v: number) => Math.ceil(v / EDGE_STEP) * EDGE_STEP;
+    const frame = req.width && req.height ? { width: snap(req.width), height: snap(req.height) } : undefined;
+    const params = {
+      model: IMAGE_MODEL,
+      prompt: req.prompt,
+      size: frame ? `${frame.width}x${frame.height}` : 'auto',
+      output_format: 'gif',
+      frame_count: req.frameCount,
+      frame_duration_ms: req.frameDurationMs,
+    };
+    // The casts cover GIF fields that the SDK's types don't include yet.
+    const result = req.referenceImages?.length
+      ? await this.client.images.edit({
+          ...params,
+          image: await toReferenceFiles(req.referenceImages),
+        } as unknown as OpenAI.Images.ImageEditParamsNonStreaming)
+      : await this.client.images.generate({
+          ...params,
+          moderation: 'low',
+        } as unknown as OpenAI.Images.ImageGenerateParamsNonStreaming);
+    const base64 = result.data?.[0]?.b64_json;
+    const sniffed = base64 ? sniffImage(Buffer.from(base64, 'base64')) : undefined;
+    if (!base64 || sniffed?.extension !== 'gif') throw new Error('OpenAI returned no GIF data');
+    return {
+      base64,
+      mimeType: sniffed.mimeType,
+      width: sniffed.width!,
+      height: sniffed.height!,
+      model: IMAGE_MODEL,
+      sizeNote:
+        frame && (frame.width !== req.width || frame.height !== req.height)
+          ? `requested ${req.width}x${req.height}, adjusted to ${frame.width}x${frame.height} (GIF frame edges are multiples of 16)`
           : undefined,
     };
   }

@@ -38,6 +38,17 @@ export interface ImageRequest {
   height: number;
 }
 
+export interface GifRequest {
+  prompt: string;
+  /** Still images that guide the animation, in the order the prompt refers to them. */
+  referenceImages?: InputImage[];
+  /** Size of each frame; the provider picks one when unset. */
+  width?: number;
+  height?: number;
+  frameCount?: number;
+  frameDurationMs?: number;
+}
+
 export interface ImageResult {
   base64: string;
   mimeType: string;
@@ -122,6 +133,8 @@ export interface TextModel {
 export interface ImageModel {
   readonly info: ModelInfo;
   generateImage(req: ImageRequest): Promise<ImageResult>;
+  /** Present only on models that can produce animated GIFs. */
+  generateGif?(req: GifRequest): Promise<ImageResult>;
 }
 
 export interface SoundModel {

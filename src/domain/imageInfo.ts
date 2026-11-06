@@ -45,6 +45,15 @@ export function sniffImage(buf: Buffer): SniffedImage | undefined {
     return { mimeType: 'image/webp', extension: 'webp' };
   }
 
+  if (buf.length > 10 && buf.toString('ascii', 0, 3) === 'GIF') {
+    return {
+      mimeType: 'image/gif',
+      extension: 'gif',
+      width: buf.readUInt16LE(6),
+      height: buf.readUInt16LE(8),
+    };
+  }
+
   return undefined;
 }
 
