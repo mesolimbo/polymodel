@@ -9,7 +9,7 @@ One MCP server for external text, image, sound effect and music models across Op
 | `gpt` | text | gpt-6-astra | OpenAI |
 | `gemini` | text | gemini-4-argon | Google |
 | `kimi-k3` | text | moonshotai/Kimi-K3 | Together AI |
-| `gpt-image` | image | gpt-image-2.5-sunburst | OpenAI |
+| `gpt-image` | image | gpt-image-2.6-sunburst | OpenAI |
 | `nano-banana` | image | gemini-3-pro-image | Google |
 | `flux-3` | image | blackforestlabs/flux-3/text-to-image (edit-image with reference images) | fal |
 | `p-image` | image | p-image (p-image-edit with reference images) | Pruna |
